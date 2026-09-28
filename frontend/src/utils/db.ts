@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie'
 import type { NameHistory } from '../types/history'
 import type { PlacePair } from '../types/placePair'
 import type { ScanItem } from '../types/scan'
-import type { Sheet } from '../types/sheet'
+import { NEIGHBOR_DIRECTIONS, type NeighborLink, type Sheet } from '../types/sheet'
 
 const sheets: Sheet[] = [
   {
@@ -14,7 +14,11 @@ const sheets: Sheet[] = [
     projection: '三角测量 · 平面图',
     sheetSizeCm: '58 × 46 厘米',
     series: '京师实测图',
-    neighborCodes: ['北平-甲-2', '北平-甲-4', '北平-乙-3'],
+    neighbors: [
+      { direction: '东', code: '北平-甲-2' },
+      { direction: '南', code: '北平-甲-4' },
+      { direction: '西', code: '北平-乙-3' },
+    ],
     status: '已编',
   },
   {
@@ -26,7 +30,12 @@ const sheets: Sheet[] = [
     projection: '三角测量 · 平面图',
     sheetSizeCm: '58 × 46 厘米',
     series: '京师实测图',
-    neighborCodes: ['北平-甲-3', '北平-乙-2', '北平-乙-4', '北平-丙-3'],
+    neighbors: [
+      { direction: '东', code: '北平-甲-3' },
+      { direction: '南', code: '北平-乙-2' },
+      { direction: '西', code: '北平-乙-4' },
+      { direction: '北', code: '北平-丙-3' },
+    ],
     status: '待核',
   },
   {
@@ -38,7 +47,11 @@ const sheets: Sheet[] = [
     projection: '多圆锥投影',
     sheetSizeCm: '52 × 44 厘米',
     series: '河北五万分一图',
-    neighborCodes: ['北平-丙-4', '北平-丙-6', '北平-丁-5'],
+    neighbors: [
+      { direction: '东', code: '北平-丙-4' },
+      { direction: '南', code: '北平-丙-6' },
+      { direction: '西', code: '北平-丁-5' },
+    ],
     status: '待编',
   },
   {
@@ -50,7 +63,11 @@ const sheets: Sheet[] = [
     projection: '三角测量 · 平面图',
     sheetSizeCm: '56 × 48 厘米',
     series: '津门实测图',
-    neighborCodes: ['天津-东-1', '天津-东-3', '天津-中-2'],
+    neighbors: [
+      { direction: '东', code: '天津-东-1' },
+      { direction: '南', code: '天津-东-3' },
+      { direction: '西', code: '天津-中-2' },
+    ],
     status: '已编',
   },
   {
@@ -62,7 +79,12 @@ const sheets: Sheet[] = [
     projection: '多圆锥投影',
     sheetSizeCm: '50 × 42 厘米',
     series: '直隶五万分一图',
-    neighborCodes: ['保定-中-3', '保定-中-5', '保定-北-4', '保定-南-4'],
+    neighbors: [
+      { direction: '东', code: '保定-中-3' },
+      { direction: '南', code: '保定-中-5' },
+      { direction: '西', code: '保定-北-4' },
+      { direction: '北', code: '保定-南-4' },
+    ],
     status: '待核',
   },
   {
@@ -74,7 +96,11 @@ const sheets: Sheet[] = [
     projection: '三角测量 · 平面图',
     sheetSizeCm: '60 × 45 厘米',
     series: '河南省城实测图',
-    neighborCodes: ['开封-城西-2', '开封-城中-1', '开封-城北-1'],
+    neighbors: [
+      { direction: '东', code: '开封-城西-2' },
+      { direction: '南', code: '开封-城中-1' },
+      { direction: '西', code: '开封-城北-1' },
+    ],
     status: '已编',
   },
 ]
@@ -405,6 +431,31 @@ class GboldmapDatabase extends Dexie {
           .toCollection()
           .modify((sheet: Sheet & { schemaRev?: number }) => {
             sheet.schemaRev = 2
+          })
+      })
+
+    this.version(3)
+      .stores({
+        sheets: 'id, code, year, scale, status, series',
+        scans: 'id, sheetId, importedAt, quality',
+        placePairs: 'id, sheetId, oldName, newName, placeType, certainty',
+        histories: 'id, placePairId, period, changeType',
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<Sheet, string>('sheets')
+          .toCollection()
+          .modify((sheet: Sheet & { schemaRev?: number }) => {
+            // 旧库只按数组位置（东、南、西、北、东北、西南）猜方向，
+            // 迁移时严格沿用同一位置映射回填，保证原有六幅图邻接不错位。
+            if (!Array.isArray(sheet.neighbors) || sheet.neighbors.length === 0) {
+              sheet.neighbors = (sheet.neighborCodes ?? []).map((code, index) => ({
+                direction: NEIGHBOR_DIRECTIONS[index] ?? NEIGHBOR_DIRECTIONS[0],
+                code,
+              }))
+            }
+            sheet.neighborCodes = sheet.neighbors.map((link: NeighborLink) => link.code)
+            sheet.schemaRev = 3
           })
       })
 

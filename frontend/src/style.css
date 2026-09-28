@@ -751,7 +751,7 @@ mark {
 .neighbor-map {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(170px, auto));
+  grid-template-rows: repeat(3, minmax(190px, auto));
   gap: 13px;
   padding: 18px;
   background:
@@ -763,11 +763,46 @@ mark {
   border-radius: 10px;
 }
 
+.neighbor-map__slot {
+  min-width: 0;
+}
+
 .neighbor-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 14px;
   background: rgba(249, 244, 235, 0.95);
   border: 1px solid #cdbca7;
   border-radius: 7px;
+}
+
+.neighbor-slot--empty {
+  border-style: dashed;
+  background: rgba(249, 244, 235, 0.7);
+}
+
+.neighbor-slot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.neighbor-slot__hint {
+  margin-bottom: 2px;
+}
+
+.neighbor-slot__select {
+  width: 100%;
+}
+
+.neighbor-slot__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .neighbor-slot--center {

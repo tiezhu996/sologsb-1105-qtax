@@ -26,7 +26,7 @@ function createEmptyForm(): NewSheet {
     projection: '三角测量 · 平面图',
     sheetSizeCm: '58 × 46 厘米',
     series: '新编图组',
-    neighborCodes: [],
+    neighbors: [],
     status: '待编',
   }
 }
@@ -53,13 +53,6 @@ function neighborSummary(sheet: Sheet): string {
     return `邻接图 ${status.adjacentCount} 幅，馆藏齐备`
   }
   return `邻接图 ${status.adjacentCount} 幅，缺 ${status.missingCodes.join('、')}`
-}
-
-function updateNeighborCodes(event: Event): void {
-  const target = event.target
-  if (target instanceof HTMLInputElement) {
-    form.neighborCodes = target.value.split('、').filter(Boolean)
-  }
 }
 
 function resetForm(): void {
@@ -147,19 +140,12 @@ onMounted(() => {
         <el-form-item label="图幅尺寸">
           <input v-model="form.sheetSizeCm" class="native-field" placeholder="例如：58 × 46 厘米" />
         </el-form-item>
-        <el-form-item label="邻接图号">
-          <input
-            :value="form.neighborCodes?.join('、')"
-            class="native-field"
-            placeholder="多个图号用中文顿号分隔"
-            @input="updateNeighborCodes"
-          />
-        </el-form-item>
         <div class="form-actions">
           <el-button @click="showCreateForm = false; resetForm()">取消</el-button>
           <el-button type="primary" native-type="submit" data-testid="submit-sheet">保存图幅</el-button>
         </div>
       </div>
+      <p class="muted">新图幅入藏后，请在「邻接预览」中按方位登记邻接，两侧对向关系会自动互相登记。</p>
       <p v-if="formError" class="text-danger">{{ formError }}</p>
     </form>
 

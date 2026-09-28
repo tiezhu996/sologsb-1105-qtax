@@ -1,12 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useSheetStore } from '../stores/sheetStore'
-import { useSheetNeighbors, type NeighborDirection, type NeighborEntry } from '../hooks/useSheetNeighbors'
+import { useSheetNeighbors } from '../hooks/useSheetNeighbors'
+import type { NeighborDirection } from '../types/sheet'
 import type { ScanItem } from '../types/scan'
+import NeighborSlotCard from '../components/common/NeighborSlotCard.vue'
 import ScanCard from '../components/common/ScanCard.vue'
 import ScaleTag from '../components/common/ScaleTag.vue'
 import VacantHint from '../components/common/VacantHint.vue'
+
+interface SlotMeta {
+  direction: NeighborDirection
+  englishLabel: string
+  slotClass: string
+}
+
+const SLOTS: SlotMeta[] = [
+  { direction: '北', englishLabel: 'NORTH', slotClass: 'slot-north' },
+  { direction: '西', englishLabel: 'WEST', slotClass: 'slot-west' },
+  { direction: '东', englishLabel: 'EAST', slotClass: 'slot-east' },
+  { direction: '南', englishLabel: 'SOUTH', slotClass: 'slot-south' },
+  { direction: '东北', englishLabel: 'NE', slotClass: 'slot-northeast' },
+  { direction: '西南', englishLabel: 'SW', slotClass: 'slot-southwest' },
+]
 
 const route = useRoute()
 const sheetStore = useSheetStore()
@@ -14,15 +32,55 @@ const sheetId = computed(() => String(route.params.id ?? ''))
 const { status } = useSheetNeighbors(sheetId)
 const source = computed(() => status.value.source)
 
-function entryAt(direction: NeighborDirection): NeighborEntry | undefined {
-  return status.value.entries.find((entry) => entry.direction === direction)
+const savingDirection = ref<NeighborDirection | null>(null)
+
+function entryAt(direction: NeighborDirection) {
+  const entry = status.value.entries.find((item) => item.direction === direction)
+  return entry ? { code: entry.code, sheet: entry.sheet } : undefined
 }
+
+const candidateSheets = computed(() =>
+  source.value
+    ? sheetStore.sheets.filter((sheet) => sheet.id !== source.value?.id)
+    : [],
+)
 
 function primaryScan(sheetIdToFind: string): ScanItem | undefined {
   return sheetStore.getScansForSheet(sheetIdToFind).find((scan) => scan.isPrimary)
 }
 
 const sourcePrimaryScan = computed(() => (source.value ? primaryScan(source.value.id) : undefined))
+
+async function handleAdd(direction: NeighborDirection, code: string): Promise<void> {
+  if (!source.value) {
+    return
+  }
+  savingDirection.value = direction
+  try {
+    await sheetStore.setNeighbor(source.value.id, direction, code)
+    ElMessage.success(`已在${direction}方登记「${code.trim()}」，对侧对向关系同步登记。`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '邻接关系保存失败，两边登记已恢复原样。')
+  } finally {
+    savingDirection.value = null
+  }
+}
+
+async function handleRemove(direction: NeighborDirection): Promise<void> {
+  if (!source.value) {
+    return
+  }
+  const entry = entryAt(direction)
+  savingDirection.value = direction
+  try {
+    await sheetStore.removeNeighbor(source.value.id, direction)
+    ElMessage.success(`已撤除${direction}方邻接${entry ? `「${entry.code}」` : ''}，对侧对向记录一并清理。`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '邻接关系撤除失败。')
+  } finally {
+    savingDirection.value = null
+  }
+}
 
 async function initialize(): Promise<void> {
   await sheetStore.init()
@@ -39,7 +97,7 @@ onMounted(() => {
       <div>
         <span class="page-kicker">NEIGHBOR ASSEMBLY</span>
         <h1>{{ source.code }} 邻接与拼合预览</h1>
-        <p>按东、南、西、北排列相邻图幅，以主用扫描件核对接边，并明确尚缺图幅。</p>
+        <p>按东、南、西、北、东北、西南方位直接登记或撤除邻接；两侧对向关系同步维护，保存失败两边回退。</p>
       </div>
       <router-link :to="`/sheets/${source.id}`"><el-button>返回图幅详情</el-button></router-link>
     </div>
@@ -60,37 +118,19 @@ onMounted(() => {
     </div>
 
     <div class="neighbor-map">
-      <article class="neighbor-slot slot-north">
-        <span class="neighbor-slot__direction">北 · NORTH</span>
-        <template v-if="entryAt('北')">
-          <template v-if="entryAt('北')?.sheet">
-            <h3>{{ entryAt('北')?.sheet?.code }}</h3>
-            <p>{{ entryAt('北')?.sheet?.title }}</p>
-            <router-link :to="`/sheets/${entryAt('北')?.sheet?.id}`"><el-button link type="primary">查看图幅</el-button></router-link>
-          </template>
-          <template v-else>
-            <h3 class="text-danger">{{ entryAt('北')?.code }}</h3>
-            <p>馆藏缺编，需补图后再核接边。</p>
-          </template>
-        </template>
-        <p v-else>该方向未登记邻接关系。</p>
-      </article>
-
-      <article class="neighbor-slot slot-west">
-        <span class="neighbor-slot__direction">西 · WEST</span>
-        <template v-if="entryAt('西')">
-          <template v-if="entryAt('西')?.sheet">
-            <h3>{{ entryAt('西')?.sheet?.code }}</h3>
-            <p>{{ entryAt('西')?.sheet?.title }}</p>
-            <router-link :to="`/sheets/${entryAt('西')?.sheet?.id}`"><el-button link type="primary">查看图幅</el-button></router-link>
-          </template>
-          <template v-else>
-            <h3 class="text-danger">{{ entryAt('西')?.code }}</h3>
-            <p>馆藏缺编，需补图后再核接边。</p>
-          </template>
-        </template>
-        <p v-else>该方向未登记邻接关系。</p>
-      </article>
+      <template v-for="slot in SLOTS" :key="slot.direction">
+        <NeighborSlotCard
+          class="neighbor-map__slot"
+          :class="slot.slotClass"
+          :direction="slot.direction"
+          :english-label="slot.englishLabel"
+          :entry="entryAt(slot.direction)"
+          :candidate-sheets="candidateSheets"
+          :saving="savingDirection === slot.direction"
+          @add="handleAdd"
+          @remove="handleRemove"
+        />
+      </template>
 
       <article class="neighbor-slot neighbor-slot--center slot-center">
         <span class="neighbor-slot__direction">当前图幅 · CENTER</span>
@@ -101,62 +141,6 @@ onMounted(() => {
           <ScanCard :scan="sourcePrimaryScan" />
         </div>
         <p v-else class="mt-20">尚未标记主用扫描件。</p>
-      </article>
-
-      <article class="neighbor-slot slot-east">
-        <span class="neighbor-slot__direction">东 · EAST</span>
-        <template v-if="entryAt('东')">
-          <template v-if="entryAt('东')?.sheet">
-            <h3>{{ entryAt('东')?.sheet?.code }}</h3>
-            <p>{{ entryAt('东')?.sheet?.title }}</p>
-            <router-link :to="`/sheets/${entryAt('东')?.sheet?.id}`"><el-button link type="primary">查看图幅</el-button></router-link>
-          </template>
-          <template v-else>
-            <h3 class="text-danger">{{ entryAt('东')?.code }}</h3>
-            <p>馆藏缺编，需补图后再核接边。</p>
-          </template>
-        </template>
-        <p v-else>该方向未登记邻接关系。</p>
-      </article>
-
-      <article class="neighbor-slot slot-south">
-        <span class="neighbor-slot__direction">南 · SOUTH</span>
-        <template v-if="entryAt('南')">
-          <template v-if="entryAt('南')?.sheet">
-            <h3>{{ entryAt('南')?.sheet?.code }}</h3>
-            <p>{{ entryAt('南')?.sheet?.title }}</p>
-            <router-link :to="`/sheets/${entryAt('南')?.sheet?.id}`"><el-button link type="primary">查看图幅</el-button></router-link>
-          </template>
-          <template v-else>
-            <h3 class="text-danger">{{ entryAt('南')?.code }}</h3>
-            <p>馆藏缺编，需补图后再核接边。</p>
-          </template>
-        </template>
-        <p v-else>该方向未登记邻接关系。</p>
-      </article>
-
-      <article v-if="entryAt('东北')" class="neighbor-slot slot-northeast">
-        <span class="neighbor-slot__direction">东北 · NE</span>
-        <template v-if="entryAt('东北')?.sheet">
-          <h3>{{ entryAt('东北')?.sheet?.code }}</h3>
-          <p>{{ entryAt('东北')?.sheet?.title }}</p>
-        </template>
-        <template v-else>
-          <h3 class="text-danger">{{ entryAt('东北')?.code }}</h3>
-          <p>馆藏缺编</p>
-        </template>
-      </article>
-
-      <article v-if="entryAt('西南')" class="neighbor-slot slot-southwest">
-        <span class="neighbor-slot__direction">西南 · SW</span>
-        <template v-if="entryAt('西南')?.sheet">
-          <h3>{{ entryAt('西南')?.sheet?.code }}</h3>
-          <p>{{ entryAt('西南')?.sheet?.title }}</p>
-        </template>
-        <template v-else>
-          <h3 class="text-danger">{{ entryAt('西南')?.code }}</h3>
-          <p>馆藏缺编</p>
-        </template>
       </article>
     </div>
 
