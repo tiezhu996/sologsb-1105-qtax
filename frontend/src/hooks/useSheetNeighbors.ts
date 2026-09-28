@@ -1,13 +1,12 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import type { Sheet } from '../types/sheet'
+import type { NeighborDirection, NeighborLink, Sheet } from '../types/sheet'
+import { NEIGHBOR_DIRECTIONS } from '../types/sheet'
 import { useSheetStore } from '../stores/sheetStore'
 
-export const NEIGHBOR_DIRECTIONS = ['东', '南', '西', '北', '东北', '西南'] as const
-export type NeighborDirection = (typeof NEIGHBOR_DIRECTIONS)[number]
+export { NEIGHBOR_DIRECTIONS }
+export type { NeighborDirection }
 
-export interface NeighborEntry {
-  code: string
-  direction: NeighborDirection
+export interface NeighborEntry extends NeighborLink {
   sheet?: Sheet
 }
 
@@ -23,11 +22,10 @@ export function useSheetNeighbors(sheetId: MaybeRefOrGetter<string>) {
 
   function getNeighborStatus(id: string): NeighborStatus {
     const source = sheetStore.getSheetById(id)
-    const entries = (source?.neighborCodes ?? []).map((code, index) => {
-      const sheet = sheetStore.getSheetByCode(code)
+    const entries: NeighborEntry[] = (source?.neighbors ?? []).map((link) => {
+      const sheet = sheetStore.getSheetByCode(link.code)
       return {
-        code,
-        direction: NEIGHBOR_DIRECTIONS[index] ?? NEIGHBOR_DIRECTIONS[0],
+        ...link,
         ...(sheet ? { sheet } : {}),
       }
     })

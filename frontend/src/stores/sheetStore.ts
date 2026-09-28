@@ -1,14 +1,20 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { ScanItem } from '../types/scan'
-import type { Sheet } from '../types/sheet'
+import type { NeighborDirection, Sheet } from '../types/sheet'
 import { createId, db, plain } from '../utils/db'
 import { sortByYear } from '../utils/scale'
+import { planAddNeighbor, planRemoveNeighbor } from '../utils/neighbors'
 
-export type NewSheet = Omit<Sheet, 'id' | 'neighborCodes'> & {
-  neighborCodes?: string[]
+export type NewSheet = Omit<Sheet, 'id' | 'neighbors'> & {
+  neighbors?: Sheet['neighbors']
 }
 export type NewScanItem = Omit<ScanItem, 'id'>
+
+export interface NeighborActionResult {
+  ok: boolean
+  message: string
+}
 
 export const useSheetStore = defineStore('sheet', () => {
   const sheets = ref<Sheet[]>([])
@@ -48,7 +54,7 @@ export const useSheetStore = defineStore('sheet', () => {
     const sheet: Sheet = {
       ...input,
       id: createId('sheet'),
-      neighborCodes: input.neighborCodes ?? [],
+      neighbors: input.neighbors ?? [],
     }
     await db.sheets.add(plain(sheet))
     sheets.value = sortByYear([...sheets.value, sheet]).reverse()
@@ -59,6 +65,52 @@ export const useSheetStore = defineStore('sheet', () => {
   async function loadSheet(id: string): Promise<void> {
     await init()
     currentSheet.value = sheets.value.find((sheet) => sheet.id === id) ?? (await db.sheets.get(id)) ?? null
+  }
+
+  /**
+   * 应用一次邻接变更。两侧图幅在同一个 Dexie 事务内落库：
+   * 任一侧保存失败时整个事务回滚，内存状态也不改动，两边都回到原样。
+   */
+  async function commitNeighborMutation(
+    plan: { byId: Map<string, Sheet> } | { error: string },
+  ): Promise<NeighborActionResult> {
+    if ('error' in plan) {
+      return { ok: false, message: plan.error }
+    }
+
+    const changed = [...plan.byId.values()]
+    try {
+      await db.transaction('rw', db.sheets, async () => {
+        for (const sheet of changed) {
+          await db.sheets.put(plain(sheet))
+        }
+      })
+    } catch {
+      return { ok: false, message: '邻接关系保存失败，两侧记录已恢复原状，请重试。' }
+    }
+
+    const changedById = new Map(changed.map((sheet) => [sheet.id, sheet]))
+    sheets.value = sortByYear(
+      sheets.value.map((sheet) => changedById.get(sheet.id) ?? sheet),
+    ).reverse()
+    if (currentSheet.value && changedById.has(currentSheet.value.id)) {
+      currentSheet.value = changedById.get(currentSheet.value.id) ?? currentSheet.value
+    }
+    return { ok: true, message: '邻接关系已更新。' }
+  }
+
+  async function addNeighbor(
+    sourceId: string,
+    direction: NeighborDirection,
+    code: string,
+  ): Promise<NeighborActionResult> {
+    await init()
+    return commitNeighborMutation(planAddNeighbor(sheets.value, sourceId, direction, code))
+  }
+
+  async function removeNeighbor(sourceId: string, direction: NeighborDirection): Promise<NeighborActionResult> {
+    await init()
+    return commitNeighborMutation(planRemoveNeighbor(sheets.value, sourceId, direction))
   }
 
   async function addScan(input: NewScanItem): Promise<ScanItem> {
@@ -114,6 +166,8 @@ export const useSheetStore = defineStore('sheet', () => {
     init,
     addSheet,
     loadSheet,
+    addNeighbor,
+    removeNeighbor,
     addScan,
     setPrimaryScan,
     getSheetById,
